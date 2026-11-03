@@ -58,3 +58,44 @@ def parse_properties(properties):
     if not np.isfinite(features.to_numpy()).all():
         raise ValueError("PROPERTIES values must be finite.")
     return features
+
+
+def load_links(path, chunksize=25000):
+    """Load a complete hyperlink TSV and return records and a file overview.
+
+    Parse all 86 features per chunk, retaining ten selected measurements to
+    limit memory use. Preserve source values; do not filter or deduplicate.
+    """
+    if not isinstance(chunksize, int) or isinstance(chunksize, bool) or chunksize <= 0:
+        raise ValueError("chunksize must be a positive integer.")
+
+    selected_features = [
+        "n_characters", "n_words", "fraction_uppercase", "readability_ari",
+        "vader_positive", "vader_negative", "vader_compound",
+        "liwc_we", "liwc_swear", "liwc_anger",
+    ]
+    parts = []
+    with pd.read_csv(Path(path), sep="\t", dtype=str, chunksize=chunksize) as reader:
+        for chunk in reader:
+            features = parse_properties(chunk["PROPERTIES"])
+            records = chunk.drop(columns="PROPERTIES").copy()
+            records["TIMESTAMP"] = pd.to_datetime(records["TIMESTAMP"], errors="raise")
+            labels = records["LINK_SENTIMENT"]
+            if not labels.isin(["-1", "1"]).all():
+                raise ValueError("LINK_SENTIMENT must be -1 or 1.")
+            records["LINK_SENTIMENT"] = labels.astype("int8")
+            records[selected_features] = features[selected_features]
+            parts.append(records)
+
+    if not parts:
+        raise ValueError(f"No hyperlink records found in {path}.")
+    links = pd.concat(parts, ignore_index=True)
+    overview = {
+        "file": Path(path).name,
+        "rows": len(links),
+        "first_timestamp": links["TIMESTAMP"].min(),
+        "last_timestamp": links["TIMESTAMP"].max(),
+        "negative_links": int(links["LINK_SENTIMENT"].eq(-1).sum()),
+        "nonnegative_links": int(links["LINK_SENTIMENT"].eq(1).sum()),
+    }
+    return links, overview
