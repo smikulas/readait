@@ -99,3 +99,22 @@ def load_links(path, chunksize=25000):
         "nonnegative_links": int(links["LINK_SENTIMENT"].eq(1).sum()),
     }
     return links, overview
+
+
+def load_embeddings(path):
+    """Load all subreddit names and 300 coordinates from the headerless CSV.
+
+    Return the unnormalized embedding table and a file overview. No rows are
+    filtered, and community names are preserved as supplied.
+    """
+    columns = ["subreddit"] + [f"embedding_{i}" for i in range(1, 301)]
+    embeddings = pd.read_csv(
+        Path(path), header=None, names=columns,
+        dtype={"subreddit": str, **{name: float for name in columns[1:]}},
+    )
+    overview = {
+        "file": Path(path).name,
+        "rows": len(embeddings),
+        "coordinates": embeddings.shape[1] - 1,
+    }
+    return embeddings, overview
